@@ -2,6 +2,7 @@ from flask import Flask, render_template, request, redirect, url_for, session
 from flask_mysqldb import MySQL
 import MySQLdb.cursors
 import re
+import bcrypt
 
 app = Flask(__name__)
 
@@ -18,8 +19,6 @@ app.config['MYSQL_DB'] = 'pythonlogin'
 mysql = MySQL(app)
 
 # http://localhost:5000/pythonlogin/ - this will be the login page, we need to use both GET and POST requests
-
-
 @app.route('/pythonlogin/', methods=['GET', 'POST'])
 def login():
     # Output message if something goes wrong...
@@ -32,26 +31,29 @@ def login():
         # Check if account exists using MySQL
         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
         cursor.execute(
-            'SELECT * FROM accounts WHERE username = %s AND password = %s', (username, password))
+            'SELECT * FROM accounts WHERE username = %s', (username,))
         # Fetch one record and return result
         account = cursor.fetchone()
-        # If account exists in accounts table in out database
+        # If account exists in accounts table in our database
         if account:
-            # Create session data, we can access this data in other routes
-            session['loggedin'] = True
-            session['id'] = account['id']
-            session['username'] = account['username']
-            # Redirect to home page
-            return redirect(url_for('home'))
+            # Verify password
+            if bcrypt.checkpw(password.encode('utf-8'), account['password'].encode('utf-8')):
+                # Password is correct
+                session['loggedin'] = True
+                session['id'] = account['id']
+                session['username'] = account['username']
+                # Redirect to home page
+                return redirect(url_for('home'))
+            else:
+                # Password is incorrect
+                msg = 'Incorrect username or password!'
         else:
-            # Account doesnt exist or username/password incorrect
-            msg = 'Incorrect username/password!'
+            # Account doesn't exist
+            msg = 'Account does not exist!'
     # Show the login form with message (if any)
     return render_template('index.html', msg=msg)
 
 # http://localhost:5000/pythonlogin/logout - this will be the logout page
-
-
 @app.route('/pythonlogin/logout')
 def logout():
     # Remove session data, this will log the user out
@@ -62,8 +64,6 @@ def logout():
     return redirect(url_for('login'))
 
 # http://localhost:5000/pythonlogin/register - this will be the registration page, we need to use both GET and POST requests
-
-
 @app.route('/pythonlogin/register', methods=['GET', 'POST'])
 def register():
     # Output message if something goes wrong...
@@ -90,8 +90,9 @@ def register():
         else:
             # Account doesnt exists and the form data is valid, now insert new account into accounts table
             print('Insert account')
-            cursor.execute('INSERT INTO accounts VALUES (NULL, %s, %s, %s)', ((
-                username,), (password,), (email,)))
+            # Hash the password
+            hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+            cursor.execute('INSERT INTO accounts VALUES (NULL, %s, %s, %s)', ((username,), (hashed_password,), (email,)))
             mysql.connection.commit()
             msg = 'You have successfully registered!'
     elif request.method == 'POST':
@@ -101,8 +102,6 @@ def register():
     return render_template('register.html', msg=msg)
 
 # http://localhost:5000/pythonlogin/home - this will be the home page, only accessible for loggedin users
-
-
 @app.route('/pythonlogin/home')
 def home():
     # Check if user is loggedin
@@ -113,8 +112,6 @@ def home():
     return redirect(url_for('login'))
 
 # http://localhost:5000/pythinlogin/profile - this will be the profile page, only accessible for loggedin users
-
-
 @app.route('/pythonlogin/profile')
 def profile():
     # Check if user is loggedin
